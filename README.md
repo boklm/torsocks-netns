@@ -12,10 +12,10 @@ How it works
 
 This program will:
 
- * run socat to listen on a UNIX socket in `$tmp_dir/torsocks.sock` and
+ * run `socat` to listen on a UNIX socket in `$tmp_dir/torsocks.sock` and
    connect it with `localhost:9050`
  * create a user and network namespace
- * run socat inside the new namespace to connect `localhost:9050` with
+ * run `socat` inside the new namespace to connect `localhost:9050` with
    the UNIX socket in `$tmp_dir/torsocks.sock`
  * run the selected command with `torsocks` inside the new namespace
 
