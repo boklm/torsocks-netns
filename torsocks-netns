@@ -1,0 +1,124 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+use English;
+use Getopt::Long;
+use Path::Tiny;
+use File::Temp;
+require "syscall.ph";
+
+my $tmp_dir = File::Temp::tempdir(CLEANUP => 1);
+
+*CLONE_NEWUTS  = \0x4000000;
+*CLONE_NEWUSER = \0x10000000;
+*CLONE_NEWNET  = \0x40000000;
+our ( $CLONE_NEWUTS, $CLONE_NEWUSER, $CLONE_NEWNET );
+
+sub exit_error {
+    print STDERR "Error: ", $_[0], "\n";
+    exit (exists $_[1] ? $_[1] : 1);
+}
+
+sub get_guidmapcmd {
+    my ($guid) = (@_);
+    my $config_file = "/etc/sub${guid}";
+    my ($id) = ${guid} eq 'uid' ? ($UID) : split(' ', $GID);
+    my ($current_usergroup) = ${guid} eq 'uid' ? getpwuid($id) : getgrgid($id);
+    for my $line (path($config_file)->lines) {
+        chomp $line;
+        my ($usergroup, $lowerid, $count) = split(':', $line);
+        next unless ($usergroup eq $current_usergroup || $usergroup eq $id);
+        return "0 $id 1 1 $lowerid $count";
+    }
+    exit_error "Could not find $guid in $config_file";
+}
+
+sub unshare_run {
+    my ($s, $options) = @_;
+    my $f1 = fork();
+    if ($f1 == 0) {
+        my $ppid = $$;
+        pipe my $rfh, my $wfh;
+        my $pid = fork() // exit_error("fork() failed: $!");
+        if ($pid == 0) {
+            close $wfh;
+            exit_error("read() did not receive EOF")
+              unless sysread($rfh, my $c, 1) == 0;
+            my $uidmapcmd = get_guidmapcmd('uid');
+            exit_error("newuidmap $ppid $uidmapcmd failed: $!")
+              unless system("newuidmap $ppid $uidmapcmd") == 0;
+            my $gidmapcmd = get_guidmapcmd('gid');
+            exit_error("newgidmap $ppid $gidmapcmd failed: $!")
+              unless system("newgidmap $ppid $gidmapcmd") == 0;
+            exit 0;
+        }
+
+        my $unshare_flags = $CLONE_NEWUSER | $CLONE_NEWUTS | $CLONE_NEWNET;
+        syscall &SYS_unshare, $unshare_flags;
+        close $wfh;
+        waitpid($pid, 0) or exit_error("waitpid() failed: $!");
+        exit_error("failed to set uidmap") if $? >> 8;
+        syscall(&SYS_setgid, 0) == 0 or exit_error("setgid failed: $!");
+        syscall(&SYS_setuid, 0) == 0 or exit_error("setuid failed: $!");
+        syscall(&SYS_setgroups, 0, 0) == 0 or exit_error("setgroups failed: $!");
+
+        my $f2 = fork() // exit_error("fork() failed: $!");
+        if ($f2) {
+            waitpid($f2, 0) or exit_error("waitpid() failed: $!");
+            exit $? >> 8;
+        }
+
+        system(qw/ip link set lo up/);
+        my $socat_pid = fork() // exit_error("fork() failed: $!");
+        if ($socat_pid == 0) {
+            exec('socat', 'TCP-LISTEN:9050,reuseaddr,fork', "UNIX-CONNECT:$tmp_dir/torsocks.sock");
+        }
+
+        my $res = $s->();
+        kill 15, $socat_pid;
+        exit($res ? $res >> 8 : 0);
+    }
+    waitpid($f1, 0) or exit_error("waitpid() failed: $!");
+    return $? >> 8;
+}
+
+sub start_socat {
+    my ($port) = @_;
+    my $socat_pid = fork() // exit_error("fork() failed: $!");
+    if ($socat_pid == 0) {
+        exec('socat', "UNIX-LISTEN:$tmp_dir/torsocks.sock,fork,reuseaddr,unlink-early,mode=700", "TCP:127.0.0.1:$port");
+    }
+    return $socat_pid;
+}
+
+sub usage {
+    print STDERR <<USAGE_EOF
+torsocks-netns [OPTIONS] -- [TORSOCKS-OPTIONS] [COMMAND [ARG...]]
+
+Options:
+  --help
+    Print this message.
+
+  --port=<port>
+    Set Tor port (default: 9050).
+USAGE_EOF
+    ;
+    exit 0;
+}
+
+my (@cmd) =  @ARGV;
+my %opts = ( port => '9050' );
+Getopt::Long::GetOptionsFromArray(\@cmd, \%opts, 'port=s', 'help!') || exit 1;
+usage if (!@cmd || $opts{help});
+
+my $socat_pid = start_socat($opts{port});
+my $res = unshare_run(
+    sub {
+        return system('torsocks', @cmd);
+    },
+    \%opts
+);
+kill 15, $socat_pid;
+exit $res;
