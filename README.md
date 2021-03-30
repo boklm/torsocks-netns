@@ -20,6 +20,16 @@ This program will:
  * run the selected command with `torsocks` inside the new namespace
 
 
+When using the --TransPort option it will work differently:
+
+ * create a user and network namespace
+ * use slirp4netns to add a new network device to the new network
+   namespace and enable networking
+ * set some iptable rules to redirect all connections to Tor (this part
+   is still missing)
+ * run the selected command inside the new namespace (without using torsocks)
+
+
 Dependencies
 ------------
 
@@ -36,6 +46,9 @@ With the Debian kernel the `user_namespaces(7)` are disabled by default.
 You can enable them with the following command as root:
 
   sysctl -w kernel.unprivileged_userns_clone=1
+
+If using the --TransPort option you will also need the slirp4netns
+package.
 
 
 Usage

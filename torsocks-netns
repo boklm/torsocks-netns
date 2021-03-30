@@ -37,17 +37,7 @@ sub get_guidmapcmd {
 
 sub start_namespace_socat {
     my ($opts) = @_;
-    if ($opts->{TransPort}) {
-        my $socat_pid_transport = fork() // exit_error("fork() failed: $!");
-        if ($socat_pid_transport == 0) {
-            exec('socat', 'TCP-LISTEN:9052,reuseaddr,fork', "UNIX-CONNECT:$tmp_dir/TransPort.sock");
-        }
-        my $socat_pid_dnsport = fork() // exit_error("fork() failed: $!");
-        if ($socat_pid_dnsport == 0) {
-            exec('socat', 'UDP4-RECVFROM:53,reuseaddr,reuseport,fork', "UNIX-CONNECT:$tmp_dir/DNSPort.sock");
-        }
-        return ($socat_pid_transport, $socat_pid_dnsport);
-    }
+    return () if $opts->{TransPort};
 
     my $socat_pid = fork() // exit_error("fork() failed: $!");
     if ($socat_pid == 0) {
@@ -59,17 +49,7 @@ sub start_namespace_socat {
 # starts the socat we run outside the namespace
 sub start_socat {
     my ($opts) = @_;
-    if ($opts->{TransPort}) {
-        my $socat_pid_transport = fork() // exit_error("fork() failed: $!");
-        if ($socat_pid_transport == 0) {
-            exec('socat', "UNIX-LISTEN:$tmp_dir/TransPort.sock,fork,reuseaddr,unlink-early,mode=700", "TCP:127.0.0.1:$opts->{TransPort}");
-        }
-        my $socat_pid_dnsport = fork() // exit_error("fork() failed: $!");
-        if ($socat_pid_dnsport == 0) {
-            exec('socat', "UNIX-LISTEN:$tmp_dir/DNSPort.sock,fork,reuseaddr,unlink-early,mode=700", "UDP-SENDTO:127.0.0.1:$opts->{DNSPort}");
-        }
-        return ($socat_pid_transport, $socat_pid_dnsport);
-    }
+    return () if $opts->{TransPort};
 
     my $socat_pid = fork() // exit_error("fork() failed: $!");
     if ($socat_pid == 0) {
@@ -78,19 +58,17 @@ sub start_socat {
     return ($socat_pid);
 }
 
-sub setup_network {
+sub setup_firewall {
     my ($opts) = @_;
+
     # TODO: we need to add some iptable rules to redirect all DNS requests
     # to 127.0.0.1:53 and all tcp connections to 127.0.0.1:9052
-    #
-    # Some of the iptables rules that I tried but didn't work are:
-    #
-    #   system(qw|/usr/sbin/iptables -t nat -A OUTPUT -p udp -m udp --dport 53 -j REDIRECT --to-ports 53|);
-    #   system(qw|/usr/sbin/iptables -t nat -A OUTPUT -p tcp --syn -j REDIRECT --to-ports 9052|);
+    # and block all non-tor connections
 }
 
 sub unshare_run {
     my ($s, $opts) = @_;
+    pipe my $rfh_slirp4netns, my $wfh_slirp4netns if $opts->{TransPort};
     my $f1 = fork();
     if ($f1 == 0) {
         my $ppid = $$;
@@ -126,7 +104,12 @@ sub unshare_run {
 
         system(qw/ip link set lo up/);
         my @socat_pid = start_namespace_socat($opts);
-        setup_network($opts) if $opts->{TransPort};
+
+        if ($opts->{TransPort}) {
+            syswrite($wfh_slirp4netns, $PID);
+            close $wfh_slirp4netns;
+            setup_firewall($opts) if $opts->{TransPort};
+        }
 
         my $res = $s->();
 
@@ -135,7 +118,17 @@ sub unshare_run {
         }
         exit($res ? $res >> 8 : 0);
     }
+    my $pid_slirp4netns;
+    if ($opts->{TransPort}) {
+        $pid_slirp4netns = fork() // exit_error("fork() failed: $!");
+        if ($pid_slirp4netns == 0) {
+            exit_error("read() received EOF")
+              if sysread($rfh_slirp4netns, my $c, 10) == 0;
+            exec('slirp4netns', '--configure', $c, 'tap0');
+        }
+    }
     waitpid($f1, 0) or exit_error("waitpid() failed: $!");
+    kill 15, $pid_slirp4netns if $pid_slirp4netns;
     return $? >> 8;
 }
 
