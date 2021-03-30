@@ -128,8 +128,9 @@ sub unshare_run {
         }
     }
     waitpid($f1, 0) or exit_error("waitpid() failed: $!");
+    my $res = $? >> 8;
     kill 15, $pid_slirp4netns if $pid_slirp4netns;
-    return $? >> 8;
+    return $res;
 }
 
 sub usage {
