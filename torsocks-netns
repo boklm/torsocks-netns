@@ -35,8 +35,62 @@ sub get_guidmapcmd {
     exit_error "Could not find $guid in $config_file";
 }
 
+sub start_namespace_socat {
+    my ($opts) = @_;
+    if ($opts->{TransPort}) {
+        my $socat_pid_transport = fork() // exit_error("fork() failed: $!");
+        if ($socat_pid_transport == 0) {
+            exec('socat', 'TCP-LISTEN:9052,reuseaddr,fork', "UNIX-CONNECT:$tmp_dir/TransPort.sock");
+        }
+        my $socat_pid_dnsport = fork() // exit_error("fork() failed: $!");
+        if ($socat_pid_dnsport == 0) {
+            exec('socat', 'UDP4-RECVFROM:53,reuseaddr,reuseport,fork', "UNIX-CONNECT:$tmp_dir/DNSPort.sock");
+        }
+        return ($socat_pid_transport, $socat_pid_dnsport);
+    }
+
+    my $socat_pid = fork() // exit_error("fork() failed: $!");
+    if ($socat_pid == 0) {
+        exec('socat', 'TCP-LISTEN:9050,reuseaddr,fork', "UNIX-CONNECT:$tmp_dir/torsocks.sock");
+    }
+    return ($socat_pid);
+}
+
+# starts the socat we run outside the namespace
+sub start_socat {
+    my ($opts) = @_;
+    if ($opts->{TransPort}) {
+        my $socat_pid_transport = fork() // exit_error("fork() failed: $!");
+        if ($socat_pid_transport == 0) {
+            exec('socat', "UNIX-LISTEN:$tmp_dir/TransPort.sock,fork,reuseaddr,unlink-early,mode=700", "TCP:127.0.0.1:$opts->{TransPort}");
+        }
+        my $socat_pid_dnsport = fork() // exit_error("fork() failed: $!");
+        if ($socat_pid_dnsport == 0) {
+            exec('socat', "UNIX-LISTEN:$tmp_dir/DNSPort.sock,fork,reuseaddr,unlink-early,mode=700", "UDP-SENDTO:127.0.0.1:$opts->{DNSPort}");
+        }
+        return ($socat_pid_transport, $socat_pid_dnsport);
+    }
+
+    my $socat_pid = fork() // exit_error("fork() failed: $!");
+    if ($socat_pid == 0) {
+        exec('socat', "UNIX-LISTEN:$tmp_dir/torsocks.sock,fork,reuseaddr,unlink-early,mode=700", "TCP:127.0.0.1:$opts->{SocksPort}");
+    }
+    return ($socat_pid);
+}
+
+sub setup_network {
+    my ($opts) = @_;
+    # TODO: we need to add some iptable rules to redirect all DNS requests
+    # to 127.0.0.1:53 and all tcp connections to 127.0.0.1:9052
+    #
+    # Some of the iptables rules that I tried but didn't work are:
+    #
+    #   system(qw|/usr/sbin/iptables -t nat -A OUTPUT -p udp -m udp --dport 53 -j REDIRECT --to-ports 53|);
+    #   system(qw|/usr/sbin/iptables -t nat -A OUTPUT -p tcp --syn -j REDIRECT --to-ports 9052|);
+}
+
 sub unshare_run {
-    my ($s, $options) = @_;
+    my ($s, $opts) = @_;
     my $f1 = fork();
     if ($f1 == 0) {
         my $ppid = $$;
@@ -71,26 +125,18 @@ sub unshare_run {
         }
 
         system(qw/ip link set lo up/);
-        my $socat_pid = fork() // exit_error("fork() failed: $!");
-        if ($socat_pid == 0) {
-            exec('socat', 'TCP-LISTEN:9050,reuseaddr,fork', "UNIX-CONNECT:$tmp_dir/torsocks.sock");
-        }
+        my @socat_pid = start_namespace_socat($opts);
+        setup_network($opts) if $opts->{TransPort};
 
         my $res = $s->();
-        kill 15, $socat_pid;
+
+        foreach my $spid (@socat_pid) {
+            kill 15, $spid;
+        }
         exit($res ? $res >> 8 : 0);
     }
     waitpid($f1, 0) or exit_error("waitpid() failed: $!");
     return $? >> 8;
-}
-
-sub start_socat {
-    my ($port) = @_;
-    my $socat_pid = fork() // exit_error("fork() failed: $!");
-    if ($socat_pid == 0) {
-        exec('socat', "UNIX-LISTEN:$tmp_dir/torsocks.sock,fork,reuseaddr,unlink-early,mode=700", "TCP:127.0.0.1:$port");
-    }
-    return $socat_pid;
 }
 
 sub usage {
@@ -101,24 +147,43 @@ Options:
   --help
     Print this message.
 
-  --port=<port>
-    Set Tor port (default: 9050).
+  --SocksPort=<port>
+    Set Tor Socks port (default: 9050).
+
+  --TransPort=<port>
+    Set Tor transparent proxy port (TransPort in torrc). When this is set,
+    instead of using torsocks we use some iptable rules to redirect all
+    connections to Tor. This requires setting the --DNSPort option too.
+
+  --DNSPort=<port>
+    Set Tor DNSPort.
+
 USAGE_EOF
     ;
     exit 0;
 }
 
-my (@cmd) =  @ARGV;
-my %opts = ( port => '9050' );
-Getopt::Long::GetOptionsFromArray(\@cmd, \%opts, 'port=s', 'help!') || exit 1;
+my @cmd = @ARGV;
+my %opts = ( SocksPort => '9050' );
+my @options = ('SocksPort=s', 'TransPort=s', 'DNSPort=s', 'help!');
+Getopt::Long::GetOptionsFromArray(\@cmd, \%opts, @options) || exit 1;
 usage if (!@cmd || $opts{help});
 
-my $socat_pid = start_socat($opts{port});
+if ($opts{TransPort} || $opts{DNSPort}) {
+    exit_error "--TransPort argument is missing" unless $opts{TransPort};
+    exit_error "--DNSPort argument is missing" unless $opts{DNSPort};
+} else {
+    @cmd = ('torsocks', @cmd);
+}
+
+my @socat_pid = start_socat(\%opts);
 my $res = unshare_run(
     sub {
-        return system('torsocks', @cmd);
+        return system(@cmd);
     },
     \%opts
 );
-kill 15, $socat_pid;
+foreach my $pid (@socat_pid) {
+    kill 15, $pid;
+}
 exit $res;
