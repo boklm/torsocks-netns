@@ -7,6 +7,7 @@ use English;
 use Getopt::Long;
 use Path::Tiny;
 use File::Temp;
+use FindBin;
 require "syscall.ph";
 
 my $tmp_dir = File::Temp::tempdir(CLEANUP => 1);
@@ -37,7 +38,7 @@ sub get_guidmapcmd {
 
 sub start_namespace_socat {
     my ($opts) = @_;
-    return () if $opts->{TransPort};
+    return () if $opts->{mode}{slirp4netns};
 
     my $socat_pid = fork() // exit_error("fork() failed: $!");
     if ($socat_pid == 0) {
@@ -49,7 +50,7 @@ sub start_namespace_socat {
 # starts the socat we run outside the namespace
 sub start_socat {
     my ($opts) = @_;
-    return () if $opts->{TransPort};
+    return () if $opts->{mode}{slirp4netns};
 
     my $socat_pid = fork() // exit_error("fork() failed: $!");
     if ($socat_pid == 0) {
@@ -58,7 +59,23 @@ sub start_socat {
     return ($socat_pid);
 }
 
-sub setup_firewall {
+sub start_redsocks {
+    my ($opts) = @_;
+    pipe my $rfh, my $wfh;
+    my $pid = fork() // exit_error("fork() failed: $!");
+    exec('/usr/sbin/redsocks', '-c', "$FindBin::Bin/redsocks.conf") unless $pid;
+
+    #system(qw|/usr/sbin/sysctl net.ipv4.ip_forward=1|);
+    system(qw|ip route add local default dev lo|);
+    system(qw|/usr/sbin/iptables -t nat -A OUTPUT -d 127.0.0.0/8 -j RETURN|);
+    system(qw|/usr/sbin/iptables -t nat -A OUTPUT -p tcp --syn -j REDIRECT --to-ports 12345|);
+
+    # TODO: Add iptables rules for DNS
+
+    return $pid;
+}
+
+sub setup_slirp4netns_firewall {
     my ($opts) = @_;
 
     # TODO: we need to add some iptable rules to redirect all DNS requests
@@ -68,7 +85,7 @@ sub setup_firewall {
 
 sub unshare_run {
     my ($s, $opts) = @_;
-    pipe my $rfh_slirp4netns, my $wfh_slirp4netns if $opts->{TransPort};
+    pipe my $rfh_slirp4netns, my $wfh_slirp4netns if $opts->{mode}{slirp4netns};
     my $f1 = fork();
     if ($f1 == 0) {
         my $ppid = $$;
@@ -103,23 +120,25 @@ sub unshare_run {
         }
 
         system(qw/ip link set lo up/);
-        my @socat_pid = start_namespace_socat($opts);
+        my @pids = start_namespace_socat($opts);
 
-        if ($opts->{TransPort}) {
+        push @pids, start_redsocks($opts) if $opts->{mode}{redsocks};
+
+        if ($opts->{mode}{slirp4netns}) {
             syswrite($wfh_slirp4netns, $PID);
             close $wfh_slirp4netns;
-            setup_firewall($opts) if $opts->{TransPort};
+            setup_slirp4netns_firewall($opts);
         }
 
         my $res = $s->();
 
-        foreach my $spid (@socat_pid) {
+        foreach my $spid (@pids) {
             kill 15, $spid;
         }
         exit($res ? $res >> 8 : 0);
     }
     my $pid_slirp4netns;
-    if ($opts->{TransPort}) {
+    if ($opts->{mode}{slirp4netns}) {
         $pid_slirp4netns = fork() // exit_error("fork() failed: $!");
         if ($pid_slirp4netns == 0) {
             exit_error("read() received EOF")
@@ -141,6 +160,9 @@ Options:
   --help
     Print this message.
 
+  --mode=<torsocks|redsocks|slirp4netns>
+    Default mode is torsocks.
+
   --SocksPort=<port>
     Set Tor Socks port (default: 9050).
 
@@ -148,6 +170,7 @@ Options:
     Set Tor transparent proxy port (TransPort in torrc). When this is set,
     instead of using torsocks we use some iptable rules to redirect all
     connections to Tor. This requires setting the --DNSPort option too.
+    Using this option automatically select slirp4netns mode.
 
   --DNSPort=<port>
     Set Tor DNSPort.
@@ -159,16 +182,30 @@ USAGE_EOF
 
 my @cmd = @ARGV;
 my %opts = ( SocksPort => '9050' );
-my @options = ('SocksPort=s', 'TransPort=s', 'DNSPort=s', 'help!');
+my @options = ('SocksPort=s', 'TransPort=s', 'DNSPort=s', 'mode=s', 'help!');
 Getopt::Long::GetOptionsFromArray(\@cmd, \%opts, @options) || exit 1;
 usage if (!@cmd || $opts{help});
 
-if ($opts{TransPort} || $opts{DNSPort}) {
+if (!$opts{mode}) {
+    if ($opts{TransPort} || $opts{DNSPort}) {
+        $opts{mode}{'slirp4netns'} = 1;
+    } else {
+        $opts{mode}{torsocks} = 1;
+    }
+} else {
+    my %known_modes = map { $_ => 1 } qw/torsocks redsocks slirp4netns/;
+    exit_error "Unknown mode $opts{mode}" unless $known_modes{$opts{mode}};
+    $opts{mode} = { $opts{mode} => 1 };
+}
+
+if ($opts{TransPort} || $opts{DNSPort} || $opts{mode}{slirp4netns}) {
+    exit_error "--TransPort and --DNSPort can only be used in slirp4netns mode"
+        unless $opts{mode}{slirp4netns};
     exit_error "--TransPort argument is missing" unless $opts{TransPort};
     exit_error "--DNSPort argument is missing" unless $opts{DNSPort};
-} else {
-    @cmd = ('torsocks', @cmd);
 }
+
+@cmd = ('torsocks', @cmd) if $opts{mode}{torsocks};
 
 my @socat_pid = start_socat(\%opts);
 my $res = unshare_run(

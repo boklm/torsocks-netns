@@ -10,7 +10,9 @@ This is a quick prototype for a network-namespace-based torsocks:
 How it works
 ------------
 
-This program will:
+torsocks-netns can work in 3 different modes.
+
+In the torsocks mode (default) it will:
 
  * run `socat` to listen on a UNIX socket in `$tmp_dir/torsocks.sock` and
    connect it with `localhost:9050`
@@ -19,14 +21,26 @@ This program will:
    the UNIX socket in `$tmp_dir/torsocks.sock`
  * run the selected command with `torsocks` inside the new namespace
 
-
-When using the --TransPort option it will work differently:
+In the slirp4netns mode (not working yet) it will:
 
  * create a user and network namespace
  * use slirp4netns to add a new network device to the new network
    namespace and enable networking
- * set some iptable rules to redirect all connections to Tor (this part
-   is still missing)
+ * set some iptable rules to redirect all connections to Tor. This part
+   is still missing.
+ * run the selected command inside the new namespace (without using torsocks)
+
+In the redsocks mode (not working yet) it will:
+
+ * run `socat` to listen on a UNIX socket in `$tmp_dir/torsocks.sock` and
+   connect it with `localhost:9050`
+ * create a user and network namespace
+ * run `socat` inside the new namespace to connect `localhost:9050` with
+   the UNIX socket in `$tmp_dir/torsocks.sock`
+ * run redsocks and set some iptables rules to redirect all connections
+   to redsocks, which is configured to redirect connections to the socks
+   proxy on `localhost:9050`. Some part of this is still missing: the tcp
+   connections are redirected, but the DNS part is still missing.
  * run the selected command inside the new namespace (without using torsocks)
 
 
@@ -37,18 +51,21 @@ If you are using Debian, the following packages need to be installed:
  * socat
  * uidmap
  * libpath-tiny-perl
+ * libfindbin-libs-perl
 
 You can use this command:
 
-  apt install socat uidmap libpath-tiny-perl
+  apt install socat uidmap libpath-tiny-perl libfindbin-libs-perl
 
 With the Debian kernel the `user_namespaces(7)` are disabled by default.
 You can enable them with the following command as root:
 
   sysctl -w kernel.unprivileged_userns_clone=1
 
-If using the --TransPort option you will also need the slirp4netns
+If using the slirp4netns mode you will also need the slirp4netns
 package.
+
+If using the redsocks mode you will also need the redsocks package.
 
 
 Usage
@@ -59,12 +76,24 @@ Usage of this script is:
 <pre>
   torsocks-netns [OPTIONS] -- [TORSOCKS-OPTIONS] [COMMAND [ARG...]]
 
-  Options:
-    --help
-      Print this message.
+Options:
+  --help
+    Print this message.
 
-    --port=&lt;port&gt;
-      Set Tor port (default: 9050).
+  --mode=&lt;torsocks|redsocks|slirp4netns&gt;
+    Default mode is torsocks.
+
+  --SocksPort=&lt;port&gt;
+    Set Tor Socks port (default: 9050).
+
+  --TransPort=&lt;port&gt;
+    Set Tor transparent proxy port (TransPort in torrc). When this is set,
+    instead of using torsocks we use some iptable rules to redirect all
+    connections to Tor. This requires setting the --DNSPort option too.
+    Using this option automatically select slirp4netns mode.
+
+  --DNSPort=&lt;port&gt;
+    Set Tor DNSPort.
 </pre>
 
 
