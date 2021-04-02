@@ -189,6 +189,9 @@ nobody/nogroup. Unfortunately it seems it is not possible to create a
 network namespace without creating at the same time a user namespace as
 an unprivileged user.
 
+The `slirp4netns` mode doesn't currently work: connections are not going
+through Tor when using this mode.
+
 
 No Rights Reserved
 ------------------
