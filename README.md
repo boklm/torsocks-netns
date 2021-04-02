@@ -1,6 +1,6 @@
-This repository contains torsocks-netns, a small wrapper script for
-torsocks which creates an empty network namespace to run torsocks inside
-it, blocking all connections except to the tor socks port.
+This repository contains `torsocks-netns`, a small wrapper script for
+`torsocks` which creates an empty network namespace to run `torsocks`
+inside it, blocking all connections except to the tor socks port.
 
 This is a quick prototype for a network-namespace-based torsocks:
 * https://gitlab.torproject.org/tpo/community/hackweek
@@ -10,7 +10,7 @@ This is a quick prototype for a network-namespace-based torsocks:
 How it works
 ------------
 
-torsocks-netns can work in 3 different modes.
+`torsocks-netns` can work in 3 different modes.
 
 In the torsocks mode (default) it will:
 
@@ -24,17 +24,17 @@ In the torsocks mode (default) it will:
 In the slirp4netns mode (not working yet) it will:
 
  * create a user and network namespace
- * use slirp4netns to add a new network device to the new network
+ * use `slirp4netns` to add a new network device to the new network
    namespace and enable networking
  * set some iptable rules to redirect all connections to Tor. This part
    is still missing.
- * run the selected command inside the new namespace (without using torsocks)
+ * run the selected command inside the new namespace (without using `torsocks`)
 
 In the redsocks mode it will:
 
  * run `socat` to listen on a UNIX socket in `$tmp_dir/torsocks.sock` and
    connect it with `localhost:9050`
- * if the --DNSPort option is used, run `socat` to listent on a UNIX
+ * if the `--DNSPort` option is used, run `socat` to listent on a UNIX
    socket in `$tmp_dir/DNSPort.sock` and connect with `localhost:$DNSPort`
    (in udp).
  * create a user and network namespace
@@ -43,12 +43,13 @@ In the redsocks mode it will:
  * if the --DNSPort option is used, run `socat` inside the new namespace
    to connect `localhost:53` (udp) with the UNIX socket in
    `$tmp_dir/DNSPort.sock`
- * run redsocks and set some iptables rules to redirect all connections
+ * run `redsocks` and set some iptables rules to redirect all connections
    to redsocks, which is configured to redirect connections to the socks
-   proxy on `localhost:9050`. If the --DNSPort option is used we also
-   redirect all udp requests on port 53 to 127.0.0.1:53. If the --DNSPort
-   option is not used, the DNS will not work.
- * run the selected command inside the new namespace (without using torsocks)
+   proxy on `localhost:9050`. If the `--DNSPort` option is used we also
+   redirect all udp requests on port 53 to `127.0.0.1:53`. If the
+   `--DNSPort` option is not used, the DNS will not work.
+ * run the selected command inside the new namespace (without using
+   `torsocks`)
 
 
 Dependencies
@@ -69,10 +70,10 @@ You can enable them with the following command as root:
 
   sysctl -w kernel.unprivileged_userns_clone=1
 
-If using the slirp4netns mode you will also need the slirp4netns
+If using the `slirp4netns` mode you will also need the `slirp4netns`
 package.
 
-If using the redsocks mode you will also need the redsocks package.
+If using the `redsocks` mode you will also need the `redsocks` package.
 
 
 Usage
@@ -128,7 +129,7 @@ index.html                                 100%[================================
 2021-03-29 19:52:06 (231 KB/s) - ‘index.html’ saved [18381/18381]
 </pre>
 
-In the `torsocks` mode, if we unset LD_PRELOAD, connections are not working anymore:
+In the `torsocks` mode, if we unset `LD_PRELOAD`, connections are not working anymore:
 
 <pre>
 $ ./torsocks-netns bash
