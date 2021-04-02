@@ -21,15 +21,6 @@ In the torsocks mode (default) it will:
    the UNIX socket in `$tmp_dir/torsocks.sock`
  * run the selected command with `torsocks` inside the new namespace
 
-In the slirp4netns mode (not working yet) it will:
-
- * create a user and network namespace
- * use `slirp4netns` to add a new network device to the new network
-   namespace and enable networking
- * set some iptable rules to redirect all connections to Tor. This part
-   is still missing.
- * run the selected command inside the new namespace (without using `torsocks`)
-
 In the redsocks mode it will:
 
  * run `socat` to listen on a UNIX socket in `$tmp_dir/torsocks.sock` and
@@ -50,6 +41,15 @@ In the redsocks mode it will:
    `--DNSPort` option is not used, the DNS will not work.
  * run the selected command inside the new namespace (without using
    `torsocks`)
+
+In the slirp4netns mode (not working yet) it will:
+
+ * create a user and network namespace
+ * use `slirp4netns` to add a new network device to the new network
+   namespace and enable networking
+ * set some iptable rules to redirect all connections to Tor. This part
+   is still missing.
+ * run the selected command inside the new namespace (without using `torsocks`)
 
 
 Dependencies
