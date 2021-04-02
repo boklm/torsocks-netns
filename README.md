@@ -216,6 +216,10 @@ Posible improvements
   iptables rules to redirect connections to Tor. We should remove this
   mode if we can't make it work.
 
+* We can add a `--stream-isolate` option for `redsocks` mode, setting a
+  random username and password for the SOCKS5 authentication (similar to
+  torsocks' `-i`).
+
 
 No Rights Reserved
 ------------------
