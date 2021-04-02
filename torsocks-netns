@@ -221,6 +221,11 @@ if ($opts{DNSPort} && $opts{mode}{torsocks}) {
     exit_error "--DNSPort cannot be used in torsocks mode";
 }
 
+if ($opts{mode}{slirp4netns}) {
+    print STDERR "Warning: slirp4netns mode is not currently working.\n",
+                 "Connections are not going through Tor.\n";
+}
+
 @cmd = ('torsocks', @cmd) if $opts{mode}{torsocks};
 
 my @socat_pid = start_socat(\%opts);
