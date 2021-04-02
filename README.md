@@ -193,6 +193,9 @@ an unprivileged user.
 The `slirp4netns` mode doesn't currently work: connections are not going
 through Tor when using this mode.
 
+If a program is using namespaces itself, it will maybe not work with
+`torsocks-netns`, because of problems creating nested namespaces.
+
 
 Posible improvements
 --------------------
