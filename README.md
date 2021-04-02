@@ -12,7 +12,7 @@ How it works
 
 `torsocks-netns` can work in 3 different modes.
 
-In the torsocks mode (default) it will:
+In the `torsocks` mode (default) it will:
 
  * run `socat` to listen on a UNIX socket in `$tmp_dir/torsocks.sock` and
    connect it with `localhost:9050`
@@ -21,7 +21,7 @@ In the torsocks mode (default) it will:
    the UNIX socket in `$tmp_dir/torsocks.sock`
  * run the selected command with `torsocks` inside the new namespace
 
-In the redsocks mode it will:
+In the `redsocks` mode it will:
 
  * run `socat` to listen on a UNIX socket in `$tmp_dir/torsocks.sock` and
    connect it with `localhost:9050`
@@ -42,7 +42,7 @@ In the redsocks mode it will:
  * run the selected command inside the new namespace (without using
    `torsocks`)
 
-In the slirp4netns mode (not working yet) it will:
+In the `slirp4netns` mode (not working yet) it will:
 
  * create a user and network namespace
  * use `slirp4netns` to add a new network device to the new network
