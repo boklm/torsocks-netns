@@ -221,6 +221,13 @@ Posible improvements
   torsocks' `-i`).
 
 
+See also
+--------
+
+[orjail](https://github.com/orjail/orjail) is an other tool that seems
+to be doing something similar, using firejail.
+
+
 No Rights Reserved
 ------------------
 
