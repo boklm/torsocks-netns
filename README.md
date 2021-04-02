@@ -107,6 +107,8 @@ Options:
 Examples
 --------
 
+Using the `torsocks` mode (default):
+
 <pre>
 $ ./torsocks-netns wget https://torproject.org/
 --2021-03-29 19:52:04--  https://torproject.org/
@@ -125,6 +127,8 @@ index.html                                 100%[================================
 
 2021-03-29 19:52:06 (231 KB/s) - ‘index.html’ saved [18381/18381]
 </pre>
+
+In the `torsocks` mode, if we unset LD_PRELOAD, connections are not working anymore:
 
 <pre>
 $ ./torsocks-netns bash
@@ -153,6 +157,24 @@ index.html                                 100%[================================
 --2021-03-29 19:54:54--  https://torproject.org/
 Resolving torproject.org (torproject.org)... failed: Temporary failure in name resolution.
 wget: unable to resolve host address ‘torproject.org’
+</pre>
+
+In the `redsocks` mode, the `DNSPort` option should be added to the
+`torrc` file, and the `--DNSPort` option used (if not, DNS won't be
+working):
+<pre>
+$ ./torsocks-netns --DNSPort=9053 --mode=redsocks -- wget -q -O- https://check.torproject.org/ | grep Congratulations
+      Congratulations. This browser is configured to use Tor.
+      Congratulations. This browser is configured to use Tor.
+</pre>
+
+In the `redsocks` mode, `LD_PRELOAD` is not used:
+<pre>
+$ ./torsocks-netns --DNSPort=9053 --mode=redsocks -- bash
+# unset LD_PRELOAD
+# wget -q -O- https://check.torproject.org/ | grep Congratulations
+      Congratulations. This browser is configured to use Tor.
+      Congratulations. This browser is configured to use Tor.
 </pre>
 
 
