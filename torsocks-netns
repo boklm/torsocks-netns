@@ -73,7 +73,11 @@ sub start_redsocks {
     my ($opts) = @_;
     pipe my $rfh, my $wfh;
     my $pid = fork() // exit_error("fork() failed: $!");
-    exec('/usr/sbin/redsocks', '-c', "$FindBin::Bin/redsocks.conf") unless $pid;
+    if ($pid == 0) {
+        close *STDOUT;
+        close *STDERR;
+        exec('/usr/sbin/redsocks', '-c', "$FindBin::Bin/redsocks.conf");
+    }
 
     system(qw|ip route add local default dev lo|);
     system(qw|/usr/sbin/iptables -t nat -A OUTPUT -d 127.0.0.0/8 -j RETURN|);
