@@ -44,7 +44,12 @@ sub start_namespace_socat {
     if ($socat_pid == 0) {
         exec('socat', 'TCP-LISTEN:9050,reuseaddr,fork', "UNIX-CONNECT:$tmp_dir/torsocks.sock");
     }
-    return ($socat_pid);
+    return ($socat_pid) unless $opts->{DNSPort};
+    my $socat_pid_dnsport = fork() // exit_error("fork() failed: $!");
+    if ($socat_pid_dnsport == 0) {
+        exec('socat', 'UDP4-RECVFROM:53,reuseaddr,reuseport,fork', "UNIX-CONNECT:$tmp_dir/DNSPort.sock");
+    }
+    return ($socat_pid, $socat_pid_dnsport);
 }
 
 # starts the socat we run outside the namespace
@@ -56,7 +61,12 @@ sub start_socat {
     if ($socat_pid == 0) {
         exec('socat', "UNIX-LISTEN:$tmp_dir/torsocks.sock,fork,reuseaddr,unlink-early,mode=700", "TCP:127.0.0.1:$opts->{SocksPort}");
     }
-    return ($socat_pid);
+    return ($socat_pid) unless $opts->{DNSPort};
+    my $socat_pid_dnsport = fork() // exit_error("fork() failed: $!");
+    if ($socat_pid_dnsport == 0) {
+        exec('socat', "UNIX-LISTEN:$tmp_dir/DNSPort.sock,fork,reuseaddr,unlink-early,mode=700", "UDP-SENDTO:127.0.0.1:$opts->{DNSPort}");
+    }
+    return ($socat_pid, $socat_pid_dnsport);
 }
 
 sub start_redsocks {
@@ -65,12 +75,14 @@ sub start_redsocks {
     my $pid = fork() // exit_error("fork() failed: $!");
     exec('/usr/sbin/redsocks', '-c', "$FindBin::Bin/redsocks.conf") unless $pid;
 
-    #system(qw|/usr/sbin/sysctl net.ipv4.ip_forward=1|);
     system(qw|ip route add local default dev lo|);
     system(qw|/usr/sbin/iptables -t nat -A OUTPUT -d 127.0.0.0/8 -j RETURN|);
     system(qw|/usr/sbin/iptables -t nat -A OUTPUT -p tcp --syn -j REDIRECT --to-ports 12345|);
+    system(qw|/usr/sbin/iptables -t nat -A PREROUTING -p udp -m udp --dport 53 -j DNAT --to 127.0.0.1:53|)
+        if $opts->{DNSPort};
 
-    # TODO: Add iptables rules for DNS
+    # TODO: When DNSPort is not used, we have no DNS working. Maybe we
+    # can do something to fix that.
 
     return $pid;
 }
@@ -170,10 +182,10 @@ Options:
     Set Tor transparent proxy port (TransPort in torrc). When this is set,
     instead of using torsocks we use some iptable rules to redirect all
     connections to Tor. This requires setting the --DNSPort option too.
-    Using this option automatically select slirp4netns mode.
+    Using this option automatically selects the slirp4netns mode.
 
   --DNSPort=<port>
-    Set Tor DNSPort.
+    Set Tor DNSPort. This can only be used in redsocks and slirp4netns modes.
 
 USAGE_EOF
     ;
@@ -198,11 +210,15 @@ if (!$opts{mode}) {
     $opts{mode} = { $opts{mode} => 1 };
 }
 
-if ($opts{TransPort} || $opts{DNSPort} || $opts{mode}{slirp4netns}) {
-    exit_error "--TransPort and --DNSPort can only be used in slirp4netns mode"
+if ($opts{TransPort} || $opts{mode}{slirp4netns}) {
+    exit_error "--TransPort can only be used in slirp4netns mode"
         unless $opts{mode}{slirp4netns};
     exit_error "--TransPort argument is missing" unless $opts{TransPort};
     exit_error "--DNSPort argument is missing" unless $opts{DNSPort};
+}
+
+if ($opts{DNSPort} && $opts{mode}{torsocks}) {
+    exit_error "--DNSPort cannot be used in torsocks mode";
 }
 
 @cmd = ('torsocks', @cmd) if $opts{mode}{torsocks};

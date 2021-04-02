@@ -30,17 +30,24 @@ In the slirp4netns mode (not working yet) it will:
    is still missing.
  * run the selected command inside the new namespace (without using torsocks)
 
-In the redsocks mode (not working yet) it will:
+In the redsocks mode it will:
 
  * run `socat` to listen on a UNIX socket in `$tmp_dir/torsocks.sock` and
    connect it with `localhost:9050`
+ * if the --DNSPort option is used, run `socat` to listent on a UNIX
+   socket in `$tmp_dir/DNSPort.sock` and connect with `localhost:$DNSPort`
+   (in udp).
  * create a user and network namespace
  * run `socat` inside the new namespace to connect `localhost:9050` with
    the UNIX socket in `$tmp_dir/torsocks.sock`
+ * if the --DNSPort option is used, run `socat` inside the new namespace
+   to connect `localhost:53` (udp) with the UNIX socket in
+   `$tmp_dir/DNSPort.sock`
  * run redsocks and set some iptables rules to redirect all connections
    to redsocks, which is configured to redirect connections to the socks
-   proxy on `localhost:9050`. Some part of this is still missing: the tcp
-   connections are redirected, but the DNS part is still missing.
+   proxy on `localhost:9050`. If the --DNSPort option is used we also
+   redirect all udp requests on port 53 to 127.0.0.1:53. If the --DNSPort
+   option is not used, the DNS will not work.
  * run the selected command inside the new namespace (without using torsocks)
 
 
@@ -90,10 +97,10 @@ Options:
     Set Tor transparent proxy port (TransPort in torrc). When this is set,
     instead of using torsocks we use some iptable rules to redirect all
     connections to Tor. This requires setting the --DNSPort option too.
-    Using this option automatically select slirp4netns mode.
+    Using this option automatically selects the slirp4netns mode.
 
   --DNSPort=&lt;port&gt;
-    Set Tor DNSPort.
+    Set Tor DNSPort. This can only be used in redsocks and slirp4netns modes.
 </pre>
 
 
