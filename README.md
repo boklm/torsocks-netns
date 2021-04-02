@@ -193,6 +193,22 @@ The `slirp4netns` mode doesn't currently work: connections are not going
 through Tor when using this mode.
 
 
+Posible improvements
+--------------------
+
+* The user's uid is currently mapped to the root uid inside the namespace.
+  Maybe we can change the mapping so that the user's uid is matching
+  inside and outside the namespace, so that it doesn't look like the
+  program is running as root.
+
+* In the `redsocks` mode, when the `--DNSPort` option is not used, there
+  is no DNS working. Maybe we can find some way to make that work.
+
+* The `slirp4netns` mode is not working currently. We are missing some
+  iptables rules to redirect connections to Tor. We should remove this
+  mode if we can't make it work.
+
+
 No Rights Reserved
 ------------------
 
