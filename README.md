@@ -63,12 +63,16 @@ If you are using Debian, the following packages need to be installed:
 
 You can use this command:
 
-  apt install socat uidmap libpath-tiny-perl libfindbin-libs-perl
+<pre>
+  # apt install socat uidmap libpath-tiny-perl libfindbin-libs-perl
+</pre>
 
 With the Debian kernel the `user_namespaces(7)` are disabled by default.
 You can enable them with the following command as root:
 
-  sysctl -w kernel.unprivileged_userns_clone=1
+<pre>
+  # sysctl -w kernel.unprivileged_userns_clone=1
+</pre>
 
 If using the `slirp4netns` mode you will also need the `slirp4netns`
 package.
