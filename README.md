@@ -4,7 +4,7 @@ inside it, blocking all connections except to the tor socks port.
 
 This is a quick prototype for a network-namespace-based torsocks:
 * https://gitlab.torproject.org/tpo/community/hackweek
-* https://pad.riseup.net/p/2021-hackweek-network-namespace
+* https://gitlab.torproject.org/tpo/community/hackweek/-/blob/main/network-namespace-based-torsocks.md
 
 
 How it works
